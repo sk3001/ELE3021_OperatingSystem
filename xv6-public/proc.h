@@ -34,21 +34,10 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-//Highest : 1, Middle : 2, Lowest : 4
-#define H_QUEUE_QUANTUM 1
-#define M_QUEUE_QUANTUM 2
-#define L_QUEUE_QUANTUM 4
-
-#define H_QUEUE_ALLOTMENT 5
-#define M_QUEUE_ALLOTMENT 10
-
-#define PRIORITY_BOOST_TIME 100
-
-#define MAX_STRIDE_PORTION 80
-
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
+  uint usz;
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
@@ -62,22 +51,34 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  //MLFQ scheduling
-  int lv_MLFQ; //Highest : 0, Lowest : 2
-  int ticks; //to send down to lower queues
-  //Stride scheduling
-  float current_pass; 
-  float stride;
-  int cpu_share;
+  int lev;			     	   // Priority level
+  uint tick_cnt;			   // Total tick count
+  int is_stride;			   // If non-zero, stride process
+  int stride;				   // If non-zero, stride value
+  uint pass_value;			   // Pass value
+  int ticket;			       // Number of ticket
 
-  //Do a Round Robin in MLFQ
-  int proc_order;
 
-  int state_check;             // 0: stride, 1: MLFQ
+  //Thread
+  struct proc* manager;        // Manager lwp
+  int isThread;                // If it is manager LWP then 0, else 1
+  thread_t tid;                // To define single lwp ID
+  void* ret_val;			   // The return value of a thread
 };
+
+int tid_alloc[NPROC];
 
 // Process memory is laid out contiguously, low addresses first:
 //   text
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+#define UINT_MAX (0xffffffff)
+#define MAX_PASS (0x0fffffff)
+
+#define TOTAL_TICKET (100)
+#define MAX_STRIDE_TICKET (80)
+#define BOOST_LIMIT (100)
+
+#define LARGENUM (10000)

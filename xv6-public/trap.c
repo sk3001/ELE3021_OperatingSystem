@@ -14,6 +14,9 @@ extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
 
+extern const uint TIME_QUANTUM[];		// in proc.c: array of time quantum
+extern uint boost_tick;							// in proc.c: logical tick counter for priority boost
+
 void
 tvinit(void)
 {
@@ -103,8 +106,31 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER) {
+		
+		// Increase boost tick and process's tick count
+		boost_tick++;
+		myproc()->tick_cnt++;
+
+		// Do priority boost as needed
+		if (boost_tick >= BOOST_LIMIT) {
+			priority_boost();
+		}
+
+		if (myproc()->is_stride) {
+			// Stride process
+			myproc()->pass_value += myproc()->stride;
+			tick_yield();
+		} else {
+			// MLFQ process
+			mlfq_pass_inc();
+
+			// Do yield as needed
+			if (myproc()->tick_cnt % TIME_QUANTUM[myproc()->lev] == 0) {
+				tick_yield();
+			} 
+		}
+	}
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

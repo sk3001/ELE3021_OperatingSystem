@@ -119,9 +119,16 @@ void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
-void            yield(void);
-int				getlev(void);
-int				set_cpu_share(int);
+int            	yield(void);
+void						tick_yield(void);
+void						minit(void);
+void						mlfq_pass_inc(void);
+void						priority_boost(void);
+int							getlev(void);
+int							set_cpu_share(int);
+int             thread_create(thread_t* thread, void* (*start_routine)(void*), void* arg);
+void            thread_exit(void* retval);
+int             thread_join(thread_t thread, void** retval);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

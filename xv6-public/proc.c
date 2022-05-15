@@ -12,16 +12,6 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
-struct {
-  int cpu_percentage; //total percentage
-  int checker_tick; //for priority boost
-
-  //to assume MLFQ as a process in stride
-  float current_pass;
-  float stride;
-
-}total_MLFQ;
-
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -29,6 +19,288 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+/* Project 1 */
+
+
+enum { MAX_MLFQ_LEV = 3 };
+
+const uint TIME_QUANTUM[MAX_MLFQ_LEV] = {1, 2, 4};
+const uint TIME_ALLOTMENT[MAX_MLFQ_LEV] = {5, 10, UINT_MAX};
+
+uint boost_tick = 0;							// Logical tick counter for priority boost	
+
+uint total_stride_ticket = 0;			// Total number of tickets stride processes have
+
+int havestride = 0;								// If non-zero, number of stride processes
+
+struct {
+	/* simple circular queue for MLFQ */
+	struct proc* queue[MAX_MLFQ_LEV][NPROC];
+	uint queue_front[MAX_MLFQ_LEV];
+	uint queue_rear[MAX_MLFQ_LEV];
+
+	uint mlfq_pass;			// MLFQ's pass value
+	uint mlfq_stride;		// MLFQ's stride
+	uint mlfq_ticket;		// MLFQ's tickets
+
+} mlfq_proc;
+
+void
+minit(void)
+{
+	mlfq_proc.mlfq_pass = 0;
+	mlfq_proc.mlfq_ticket = TOTAL_TICKET;	 
+	mlfq_proc.mlfq_stride = LARGENUM / mlfq_proc.mlfq_ticket; 
+
+	for (int i = 0; i < 3; ++i) {
+		mlfq_proc.queue_front[i] = 0;
+		mlfq_proc.queue_rear[i] = 0;
+
+		for (int np = 0; np < NPROC; np++) {
+			mlfq_proc.queue[i][np] = 0;
+		}
+	}
+}
+
+void
+mlfq_pass_inc(void)
+{
+	mlfq_proc.mlfq_pass += mlfq_proc.mlfq_stride;
+}
+
+static int
+is_full(int lev)
+{
+	return mlfq_proc.queue_front[lev] == ((mlfq_proc.queue_rear[lev] + 1) % NPROC);
+}
+
+static int
+is_empty(int lev)
+{
+	return mlfq_proc.queue_front[lev] == mlfq_proc.queue_rear[lev];
+}
+
+static void
+enqueue(int lev, struct proc* proc)
+{
+	if (is_full(lev))
+		panic("Queue is already full");
+	mlfq_proc.queue_rear[lev] = ((mlfq_proc.queue_rear[lev] + 1) % NPROC);
+	mlfq_proc.queue[lev][mlfq_proc.queue_rear[lev]] = proc;
+}
+
+static struct proc*
+dequeue(int lev)
+{
+	if(is_empty(lev)) {
+		return (struct proc*)0;
+	}
+	mlfq_proc.queue_front[lev] = ((mlfq_proc.queue_front[lev] + 1) % NPROC);
+	return mlfq_proc.queue[lev][mlfq_proc.queue_front[lev]];
+}
+
+int
+getlev(void)
+{
+	return myproc()->lev;
+}
+
+static void
+halt(void)
+{
+	asm volatile("hlt");
+}
+
+void
+priority_boost(void)
+{
+  struct proc* p;
+
+  if (boost_tick < BOOST_LIMIT)
+    panic("panic in priority boost");
+
+  boost_tick = 0; 
+ 	int flag = holding(&ptable.lock); 
+	if (!flag)
+  	acquire(&ptable.lock);
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if (p->is_stride) {
+      continue;
+    }
+
+    if (p->lev == 0)
+			continue;
+
+		p->lev = 0; 
+    p->tick_cnt = 0; 
+  }
+  // Dequeue all levels except highest, and enqueue them Lev 0
+  for(;;) {
+    if (!(p = dequeue(1))) { 
+      break;
+    }
+    enqueue(0, p);    
+  }
+
+  for (;;) {
+    if (!(p = dequeue(2))) { 
+      break;
+    }
+    enqueue(0, p);    
+  }
+
+	if (mlfq_proc.queue_front[1] != mlfq_proc.queue_rear[1] ||
+				mlfq_proc.queue_front[2] != mlfq_proc.queue_rear[2])
+		panic("panic in priority boost().");
+	if (!flag)
+		release(&ptable.lock);
+}
+
+
+static struct proc*
+find_mlfq_proc(void)
+{
+	struct proc* p;
+	int lev = 0;
+	for (;;) {
+		if (!(p = dequeue(lev))) {
+			lev++;
+			break;
+		}
+		return p;
+	}
+
+	for (;;) {
+		if (!(p = dequeue(lev))) {
+			lev++;
+			break;
+		}
+		return p;
+	}
+
+	for (;;) {
+		if (!(p = dequeue(lev))) {
+			break;
+		}
+		return p;
+	}
+	return (struct proc*)0;
+}
+// Give up the CPU for one scheduling round.
+int
+yield(void)
+{
+  acquire(&ptable.lock);  //DOC: yieldlock
+  myproc()->state = RUNNABLE;
+	struct proc* p = myproc();
+	
+	// Increase boost_tick 
+	boost_tick += 1;
+	if (boost_tick >= BOOST_LIMIT) {
+		priority_boost();
+	}
+
+	// Increase process's tick_cnt
+	p->tick_cnt += 1;
+
+	// Increase its/MLFQ's pass value
+	if (p->is_stride) {
+		p->pass_value += p->stride;
+	} else {
+		// increase priority level as needed
+		if (p->lev < MAX_MLFQ_LEV - 1 && p->tick_cnt >= TIME_ALLOTMENT[p->lev]) {
+			p->lev++;
+			p->tick_cnt = 0;
+		} else if (p->lev == MAX_MLFQ_LEV - 1 && p->tick_cnt >= TIME_QUANTUM[p->lev]) {
+			p->tick_cnt = 0;
+		}
+
+		enqueue(p->lev, p);
+		mlfq_pass_inc();
+	}
+	 
+  sched();
+  release(&ptable.lock);
+	return 0;
+}
+
+static uint
+get_min_pass()
+{
+	// The ptable lock must be held
+	if(!holding(&ptable.lock))
+		panic("panic in get_min_pass().");
+	
+	uint min_pass = mlfq_proc.mlfq_pass;
+	struct proc* p;
+	for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		if (p->is_stride && p->state == RUNNABLE && p->pass_value < min_pass) {
+			min_pass = p->pass_value;
+		}
+	}
+	return min_pass;
+}
+
+static void
+init_pass()
+{
+	mlfq_proc.mlfq_pass = 0 ;
+	struct proc* p;
+	for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		if (p->stride)
+			p->pass_value = 0;
+	}
+}
+
+int
+set_cpu_share(int ticket)
+{
+	if (ticket + total_stride_ticket > MAX_STRIDE_TICKET)
+		return -1;
+
+	acquire(&ptable.lock);
+
+	if (ticket + total_stride_ticket > MAX_STRIDE_TICKET) {
+		release(&ptable.lock);
+		return -1;
+	}
+
+	struct proc* p = myproc();
+	
+	havestride++;	
+	total_stride_ticket += ticket;
+
+	p->lev = -1;
+	p->tick_cnt = 0;
+	p->is_stride = 1;
+	p->ticket = ticket;
+	p->stride = LARGENUM / ticket;
+	p->pass_value = get_min_pass();
+
+	mlfq_proc.mlfq_ticket -= ticket;
+	mlfq_proc.mlfq_stride = LARGENUM / mlfq_proc.mlfq_ticket;
+
+	if (mlfq_proc.mlfq_ticket + total_stride_ticket != TOTAL_TICKET)
+		panic("panic in set_cpu_share().");
+	
+	release(&ptable.lock);
+	return 0;
+}
+
+static struct proc*
+find_stride_proc(uint min_pass)
+{
+	struct proc* p;
+	for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		if (p->state != RUNNABLE || !p->is_stride || p->pass_value != min_pass)
+			continue;
+		return p;
+	}
+	panic("panic in find_stride_proc().");
+}
+
+/* Project 1 */
 
 void
 pinit(void)
@@ -121,15 +393,9 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
-  p->lv_MLFQ = 0;
-  p->ticks = 0;
-  p->current_pass = 0;
-  p->stride = 0;
-  p->cpu_share = 0;
-  p->proc_order = 0;
-
-  p->state_check = 0;
+  
+  p->tid = 0;
+  p->manager = 0;
 
   return p;
 }
@@ -161,6 +427,14 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+	p->lev = 0;
+	p->tick_cnt = 0;
+	p->is_stride = 0;
+	p->stride = 0;
+	p->pass_value = 0;
+	p->ticket = 0;
+
+	
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -168,6 +442,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+	enqueue(p->lev, p);
 
   release(&ptable.lock);
 }
@@ -178,6 +453,7 @@ int
 growproc(int n)
 {
   uint sz;
+  struct proc *p;
   struct proc *curproc = myproc();
 
   sz = curproc->sz;
@@ -188,7 +464,12 @@ growproc(int n)
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   }
-  curproc->sz = sz;
+  acquire(&ptable.lock);
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+	  if (p->pid == curproc->pid)
+		  p->sz = sz;
+  release(&ptable.lock);
+
   switchuvm(curproc);
   return 0;
 }
@@ -230,11 +511,19 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
+	
+	np->lev = 0;
+	np->tick_cnt = 0;
+	np->is_stride = 0;
+	np->stride = 0;
+	np->pass_value = 0;
+	np->ticket = 0;
 
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-
+	enqueue(np->lev, np);
+	
   release(&ptable.lock);
 
   return pid;
@@ -280,8 +569,15 @@ exit(void)
     }
   }
 
-  total_MLFQ.cpu_percentage -= curproc->cpu_share;
+	
+	if (curproc->is_stride) {
+		havestride--;
+		total_stride_ticket -= curproc->ticket;
 
+		mlfq_proc.mlfq_ticket += curproc->ticket;
+		mlfq_proc.mlfq_stride = LARGENUM / mlfq_proc.mlfq_ticket;
+	}
+	
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
@@ -315,6 +611,14 @@ wait(void)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
+
+				p->lev = 0;
+				p->tick_cnt = 0;
+				p->is_stride = 0;
+				p->stride = 0;
+				p->pass_value = 0;
+				p->ticket = 0;
+
         p->state = UNUSED;
         release(&ptable.lock);
         return pid;
@@ -346,138 +650,45 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-
-  struct proc *tmp;
-  
+	uint min_pass;
   for(;;){
     // Enable interrupts on this processor.
     sti();
-    
-    int count = 0; //count process in scheduler
+
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    
-    tmp = 0;
-    float min_pass = total_MLFQ.current_pass;
 
-    int current_order = 0;
+		min_pass = get_min_pass();
 
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-      
-      count += 1;
+		if (min_pass == mlfq_proc.mlfq_pass) {
+			p = find_mlfq_proc();
+			if (!p) {
+				mlfq_pass_inc();
+				release(&ptable.lock);
+				halt();
+				continue;
+			}
+		} else {
+      // Stride scheduling proportion
+			p = find_stride_proc(min_pass);
+			if (!p)
+				panic("panic in scheduler(). Cannot find stride process.");
+		}
 
-      //to run stride scheduler starting from minimum pass process
-      if(p->state_check == 0 && p->current_pass < min_pass){
-        min_pass = p->current_pass;
-        tmp = p;
-      }
-    }
+		if (mlfq_proc.mlfq_pass >= MAX_PASS && min_pass >= MAX_PASS) {
+			init_pass();
+		}
 
-    //if tmp remains 0 it equals MLFQ process has the minimum pass
-    //so do a MLFQ scheduling
-    if(tmp == 0){
-
-        int this_MLFQ = 2;
-        int min_order = 999999;
-        
-
-        //priority boosting
-        if(total_MLFQ.checker_tick == PRIORITY_BOOST_TIME){
-            for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-                if(p->state != RUNNABLE)
-                    continue;
-
-                p->lv_MLFQ = 0;
-                p->ticks = 0;
-                p->proc_order = 0;
-            }
-            total_MLFQ.checker_tick = 0;
-            current_order = 0;
-        }
-
-        for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-            if (p->state != RUNNABLE)
-                continue;
-
-
-            if (p->lv_MLFQ < this_MLFQ) {
-                this_MLFQ = p->lv_MLFQ;
-                tmp = p;
-                min_order = p->proc_order;
-            }
-
-            else if (p->lv_MLFQ == this_MLFQ && p->proc_order < min_order) {
-                tmp = p;
-                min_order = p->proc_order;
-            }
-        }
-
-        if (p == tmp) {
-            c->proc = p;
-            switchuvm(p);
-            p->state = RUNNING;
-            
-            swtch(&(c->scheduler), p->context);
-            switchkvm();
-
-            total_MLFQ.checker_tick += 1;
-            p->ticks += 1;
-
-            c->proc = 0;
-
-            if (p->lv_MLFQ == 0) {
-                if (p->ticks >= H_QUEUE_ALLOTMENT) {
-                    p->ticks = 0;
-                    p->lv_MLFQ += 1;
-                }
-                else if (p->ticks % H_QUEUE_QUANTUM == 0) {
-                    p->proc_order = current_order + 1;
-                }
-
-            }
-
-            else if (p->lv_MLFQ == 1) {
-                if (p->ticks >= M_QUEUE_ALLOTMENT) {
-                    p->ticks = 0;
-                    p->lv_MLFQ += 1;
-                }
-                else if (p->ticks % M_QUEUE_QUANTUM == 0) {
-                    p->proc_order = current_order + 1;
-                }
-            }
-
-            else if (p->lv_MLFQ == 2) {
-                if (p->ticks >= L_QUEUE_QUANTUM) {
-                    p->proc_order = current_order + 1;
-                }
-            }
-        }
-
-        total_MLFQ.current_pass += (float)(1000 / (float)100 - total_MLFQ.cpu_percentage);
-
-        if(count == 0){
-            total_MLFQ.current_pass = 0;
-        }
-    }
-    else if(p == tmp){
-        // Switch to chosen process.  It is the process's job
-        // to release ptable.lock and then reacquire it
-        // before jumping back to us.
-        c->proc = p;
-        switchuvm(p);
-        p->state = RUNNING;
-
-        swtch(&(c->scheduler), p->context);
-        switchkvm();
-        
-        p->current_pass += p->stride;
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-    }
+		if (p) {
+			c->proc = p;
+			switchuvm(p);
+			p->state = RUNNING;
+			swtch(&(c->scheduler), p->context);
+			switchkvm();
+			
+			c->proc = 0;
+		}
+		
     release(&ptable.lock);
   }
 }
@@ -509,11 +720,24 @@ sched(void)
 }
 
 // Give up the CPU for one scheduling round.
+// This is not system call, see yield()
 void
-yield(void)
+tick_yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE;
+  struct proc* p = myproc();
+	myproc()->state = RUNNABLE;
+	
+	if (!p->is_stride) {
+		if (p->lev < MAX_MLFQ_LEV - 1 && p->tick_cnt >= TIME_ALLOTMENT[p->lev]) {
+			p->lev++;
+			p->tick_cnt = 0;
+		} else if (p->lev == MAX_MLFQ_LEV - 1) {
+			p->tick_cnt = 0;
+		}
+		enqueue(p->lev, p);
+	}
+
   sched();
   release(&ptable.lock);
 }
@@ -587,8 +811,15 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
-      p->state = RUNNABLE;
+    if(p->state == SLEEPING && p->chan == chan){
+      if (!p->is_stride) {
+				enqueue(p->lev, p);
+			} else {
+				p->pass_value = get_min_pass();
+			}
+
+			p->state = RUNNABLE;
+		}
 }
 
 // Wake up all processes sleeping on chan.
@@ -613,8 +844,14 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING) {
+				if (!p->is_stride) {
+					enqueue(p->lev, p);
+				} else {
+					p->pass_value = get_min_pass();
+				}
         p->state = RUNNABLE;
+			}
       release(&ptable.lock);
       return 0;
     }
@@ -660,37 +897,143 @@ procdump(void)
   }
 }
 
-int getlev(void) {
-    struct proc* p = myproc();
-    if (p == 0)
-        return -1;
+int lwpNum = 1;
 
-    return p->lv_MLFQ;
+int thread_create(thread_t* thread, void* (*start_routine)(void*), void* arg) {
+	struct proc* np;
+	struct proc* curproc = myproc();
+	uint sz, sp, ustack[2];
+
+	if ((np = allocproc()) == 0)
+		return -1;
+
+	// Duplicate manager's ofile, cwd, name
+	for (int i = 0; i < NOFILE; i++)
+		if (curproc->ofile[i])
+			np->ofile[i] = filedup(curproc->ofile[i]);
+
+	np->cwd = idup(curproc->cwd);
+
+	safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+	np->sz = curproc->sz;
+	np->pgdir = curproc->pgdir;
+	np->pid = curproc->pid;
+	np->parent = curproc->parent;
+	// If normal thread(not manager) calls thread_create()
+	// Acts same as manager thread calls thread_create()
+	// np's manager thread will be caller's manager thread
+	if (curproc->isThread)
+		np->manager = curproc->manager;
+	else
+		np->manager = curproc;
+	lwpNum++;
+	*np->tf = *curproc->tf;
+	np->isThread = 1;
+
+	// Allocate available tid by searching tid_alloc[]
+	for (int i = 0; i < NPROC; i++) {
+		if (tid_alloc[i] == 0) {
+			np->tid = i + 1;
+			tid_alloc[i] = 1;
+			break;
+		}
+	}
+
+	*thread = np->tid;
+
+	// Set its sz and usz. Only ustack[2] is needed for start_routine's argument
+	sz = curproc->usz + (uint)(2 * PGSIZE * (np->tid));
+	sp = sz;
+	np->usz = sz;
+
+	ustack[0] = 0xFFFFFFFF;
+	ustack[1] = (uint)arg;
+
+	sp -= 8;
+	if (copyout(np->pgdir, sp, ustack, 8) < 0)
+		return -1;
+
+	// Set eip as an address of start_routine()
+	np->tf->eip = (uint)start_routine;
+	np->tf->esp = sp;
+
+	np->state = RUNNABLE;
+	release(&ptable.lock);
+
+	return 0;
 }
 
-int set_cpu_share(int portion) {
-    struct proc* p = myproc();
+void thread_exit(void* retval){
+	struct proc* curproc = myproc();
+	int fd;
 
-    acquire(&ptable.lock);
+	// Close all open files.
+	for (fd = 0; fd < NOFILE; fd++) {
+		if (curproc->ofile[fd]) {
+			fileclose(curproc->ofile[fd]);
+			curproc->ofile[fd] = 0;
+		}
+	}
 
-    if (total_MLFQ.cpu_percentage + portion > MAX_STRIDE_PORTION) {
-        release(&ptable.lock);
-        return -1;
-    }
+	begin_op();
+	iput(curproc->cwd);
+	end_op();
+	curproc->cwd = 0;
 
-    total_MLFQ.cpu_percentage += portion;
-    p->cpu_share = portion;
-    p->stride = (float)(1000 / (float)portion);
-    p->state_check = 0;
-    
-    total_MLFQ.current_pass = 0;
+	acquire(&ptable.lock);
 
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        if (p->state != RUNNABLE || p->state_check == 1)
-            continue;
-        p->current_pass = 0;
-    }
+	// Save retval value to LWP ret_val
+	curproc->ret_val = retval;
 
-    release(&ptable.lock);
-    return 0;
+	// Manager process might be sleeping in wait().
+	wakeup1(curproc->manager);
+
+	// Jump into the scheduler, never to return.
+	curproc->state = ZOMBIE;
+	sched();
+	panic("zombie exit");
+}
+
+int thread_join(thread_t thread, void** retval){
+	struct proc* p;
+	struct proc* curproc = myproc();
+
+	if (curproc->isThread)
+		panic("If it is not manager, cannot call thread_join()");
+
+	acquire(&ptable.lock);
+	for (;;) {
+		for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+			if (!p->isThread || p->tid != thread)
+				continue;
+
+			if (p->state == ZOMBIE) {
+				*retval = (void*)p->ret_val;
+
+				kfree(p->kstack);
+				p->kstack = 0;
+
+				p->pid = 0;
+				p->parent = 0;
+				p->name[0] = 0;
+				p->killed = 0;
+				p->isThread = 0;
+				// Return its tid
+				tid_alloc[p->tid - 1] = 0;
+				p->tid = 0;
+				p->state = UNUSED;
+
+				release(&ptable.lock);
+				return 0;
+			}
+		}
+		if (curproc->killed) {
+			release(&ptable.lock);
+			return -1;
+		}
+
+		// Wait for normal thread to exit
+		sleep(curproc, &ptable.lock);
+	}
 }
