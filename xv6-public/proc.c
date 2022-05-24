@@ -347,6 +347,8 @@ myproc(void) {
   return p;
 }
 
+int nexttid = 1;
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -370,6 +372,11 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->isThread = 0;
+  p->manager = 0;
+  p->tid = nexttid++;
+  p->bstack = 0;
+  p->theap = 0;
 
   release(&ptable.lock);
 
@@ -393,9 +400,6 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-  
-  p->tid = 0;
-  p->manager = 0;
 
   return p;
 }
@@ -452,26 +456,26 @@ userinit(void)
 int
 growproc(int n)
 {
-  uint sz;
-  struct proc *p;
-  struct proc *curproc = myproc();
+	uint sz;
+	struct proc* curproc = myproc();
 
-  sz = curproc->sz;
-  if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  }
-  acquire(&ptable.lock);
-  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-	  if (p->pid == curproc->pid)
-		  p->sz = sz;
-  release(&ptable.lock);
-
-  switchuvm(curproc);
-  return 0;
+	sz = curproc->sz;
+	if (n > 0) {
+		if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+			return -1;
+	}
+	else if (n < 0) {
+		if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+			return -1;
+	}
+	acquire(&ptable.lock);
+	for (struct proc* tmp = ptable.proc; tmp < &ptable.proc[NPROC]; tmp++) {
+		if (tmp->manager == curproc->manager)
+			tmp->sz = sz;
+	}
+	release(&ptable.lock);
+	switchuvm(curproc);
+	return 0;
 }
 
 // Create a new process copying p as the parent.
@@ -535,53 +539,93 @@ fork(void)
 void
 exit(void)
 {
-  struct proc *curproc = myproc();
-  struct proc *p;
-  int fd;
+	struct proc* curproc = myproc();
+	struct proc* p, * tmp;
+	int fd;
 
-  if(curproc == initproc)
-    panic("init exiting");
+	if (curproc == initproc)
+		panic("init exiting");
+	if (curproc->pid != curproc->manager->tid) {
+		acquire(&ptable.lock);
 
-  // Close all open files.
-  for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
-    }
-  }
+		for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+			if (p->manager == curproc->manager && p->pid == p->manager->tid) {
+				p->killed = 1;
+				p->state = RUNNABLE;
+				break;
+			}
+		}
 
-  begin_op();
-  iput(curproc->cwd);
-  end_op();
-  curproc->cwd = 0;
-
-  acquire(&ptable.lock);
-
-  // Parent might be sleeping in wait().
-  wakeup1(curproc->parent);
-
-  // Pass abandoned children to init.
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == curproc){
-      p->parent = initproc;
-      if(p->state == ZOMBIE)
-        wakeup1(initproc);
-    }
-  }
-
-	
-	if (curproc->is_stride) {
-		havestride--;
-		total_stride_ticket -= curproc->ticket;
-
-		mlfq_proc.mlfq_ticket += curproc->ticket;
-		mlfq_proc.mlfq_stride = LARGENUM / mlfq_proc.mlfq_ticket;
+		curproc->state = ZOMBIE;
+		sched();
+		panic("zombie exit");
 	}
-	
-  // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
-  sched();
-  panic("zombie exit");
+
+	for (int i = 0; i < NPROC; i++) {
+		acquire(&ptable.lock);
+		tmp = &ptable.proc[i];
+		release(&ptable.lock);
+
+		if (tmp->manager->tid != curproc->manager->tid) continue;
+
+		// Close all open files.
+		for (fd = 0; fd < NOFILE; fd++) {
+			if (tmp->ofile[fd]) {
+				fileclose(tmp->ofile[fd]);
+				tmp->ofile[fd] = 0;
+			}
+		}
+
+		begin_op();
+		iput(tmp->cwd);
+		end_op();
+		tmp->cwd = 0;
+
+		acquire(&ptable.lock);
+		// Pass abandoned children to init.
+
+
+		for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+			if (p->parent == tmp && p->manager->tid != tmp->manager->tid) {
+				p->parent = initproc;
+				if (p->state == ZOMBIE)
+					wakeup1(initproc);
+			}
+		}
+
+		// Jump into the scheduler, never to return.
+		if (tmp != curproc) {
+			kfree(tmp->kstack);
+			tmp->kstack = 0;
+			tmp->parent = 0;
+			tmp->name[0] = 0;
+			tmp->killed = 0;
+			tmp->state = UNUSED;
+
+			// Clean up LWP user stack..
+			tmp->sz = deallocuvm(tmp->pgdir, tmp->bstack, tmp->bstack - 2 * PGSIZE);
+
+			tmp->sz = 0;
+			tmp->theap = 0;
+			tmp->bstack = 0;
+		}
+		release(&ptable.lock);
+	}
+
+	acquire(&ptable.lock);
+
+	for (struct proc* tmp = ptable.proc; tmp < &ptable.proc[NPROC]; tmp++) {
+		if (tmp->manager->tid == curproc->manager->tid && tmp != curproc) {
+			tmp->manager = 0;
+			tmp->pid = 0;
+		}
+	}
+
+	curproc->state = ZOMBIE;
+	wakeup1(curproc->parent);
+
+	sched();
+	panic("zombie exit");
 }
 
 // Wait for a child process to exit and return its pid.
@@ -837,27 +881,25 @@ wakeup(void *chan)
 int
 kill(int pid)
 {
-  struct proc *p;
+	struct proc* p;
 
-  acquire(&ptable.lock);
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid){
-      p->killed = 1;
-      // Wake process from sleep if necessary.
-      if(p->state == SLEEPING) {
-				if (!p->is_stride) {
-					enqueue(p->lev, p);
-				} else {
-					p->pass_value = get_min_pass();
+	acquire(&ptable.lock);
+	for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		if (p->pid == pid) {
+			for (struct proc* tmp = ptable.proc; tmp < &ptable.proc[NPROC]; tmp++) {
+				if (tmp->manager == p->manager) {
+					tmp->killed = 1;
+					// Wake process from sleep if necessary.
+					if (tmp->state == SLEEPING)
+						tmp->state = RUNNABLE;
 				}
-        p->state = RUNNABLE;
 			}
-      release(&ptable.lock);
-      return 0;
-    }
-  }
-  release(&ptable.lock);
-  return -1;
+			release(&ptable.lock);
+			return 0;
+		}
+	}
+	release(&ptable.lock);
+	return -1;
 }
 
 //PAGEBREAK: 36
@@ -900,64 +942,73 @@ procdump(void)
 int lwpNum = 1;
 
 int thread_create(thread_t* thread, void* (*start_routine)(void*), void* arg) {
-	struct proc* np;
+
+	struct proc* np, * p;
 	struct proc* curproc = myproc();
-	uint sz, sp, ustack[2];
+	uint sp, ustack[3];
 
-	if ((np = allocproc()) == 0)
+	if ((np = allocproc()) == 0) {
 		return -1;
-
-	// Duplicate manager's ofile, cwd, name
-	for (int i = 0; i < NOFILE; i++)
-		if (curproc->ofile[i])
-			np->ofile[i] = filedup(curproc->ofile[i]);
-
-	np->cwd = idup(curproc->cwd);
-
-	safestrcpy(np->name, curproc->name, sizeof(curproc->name));
-
-	np->sz = curproc->sz;
-	np->pgdir = curproc->pgdir;
-	np->pid = curproc->pid;
-	np->parent = curproc->parent;
-	// If normal thread(not manager) calls thread_create()
-	// Acts same as manager thread calls thread_create()
-	// np's manager thread will be caller's manager thread
-	if (curproc->isThread)
-		np->manager = curproc->manager;
-	else
-		np->manager = curproc;
-	lwpNum++;
-	*np->tf = *curproc->tf;
-	np->isThread = 1;
-
-	// Allocate available tid by searching tid_alloc[]
-	for (int i = 0; i < NPROC; i++) {
-		if (tid_alloc[i] == 0) {
-			np->tid = i + 1;
-			tid_alloc[i] = 1;
-			break;
-		}
 	}
 
-	*thread = np->tid;
+	// Allocate LWP stack
+	if (growproc(2 * PGSIZE) != 0) {
+		kfree(np->kstack);
+		np->kstack = 0;
+		np->state = UNUSED;
+		return -1;
+	}
 
-	// Set its sz and usz. Only ustack[2] is needed for start_routine's argument
-	sz = curproc->usz + (uint)(2 * PGSIZE * (np->tid));
-	sp = sz;
-	np->usz = sz;
+	acquire(&ptable.lock);
 
-	ustack[0] = 0xFFFFFFFF;
-	ustack[1] = (uint)arg;
+	clearpteu(curproc->pgdir, (char*)(curproc->sz - 2 * PGSIZE));
+	sp = curproc->sz;
+	np->bstack = sp;
+	np->theap = sp - 2 * PGSIZE;
+
+	ustack[0] = 0xffffffff; // fake return PC
+	ustack[1] = (uint)arg; // argument
 
 	sp -= 8;
-	if (copyout(np->pgdir, sp, ustack, 8) < 0)
-		return -1;
+	if (copyout(curproc->pgdir, sp, ustack, 8) < 0) return -1;
 
-	// Set eip as an address of start_routine()
+	// Share resources with master process
+	np->pgdir = curproc->pgdir;
+	*np->tf = *curproc->tf;
+	np->tid = nexttid++;
+	*thread = np->tid;
+
 	np->tf->eip = (uint)start_routine;
 	np->tf->esp = sp;
 
+	if (curproc->tid == 0) {
+		// curproc is normal process
+		np->manager->tid = curproc->pid;
+	}
+	else {
+		// curproc is lwp
+		np->manager->tid = curproc->manager->tid;
+	}
+
+	// share sz
+
+	for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		if (p->manager == curproc->manager) p->sz = curproc->sz;
+	}
+
+	release(&ptable.lock);
+
+	np->parent = curproc;
+
+	for (int i = 0; i < NOFILE; i++)
+		if (curproc->ofile[i])
+			np->ofile[i] = filedup(curproc->ofile[i]);
+	np->cwd = idup(curproc->cwd);
+
+
+	safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+	acquire(&ptable.lock);
 	np->state = RUNNABLE;
 	release(&ptable.lock);
 
@@ -1020,7 +1071,6 @@ int thread_join(thread_t thread, void** retval){
 				p->killed = 0;
 				p->isThread = 0;
 				// Return its tid
-				tid_alloc[p->tid - 1] = 0;
 				p->tid = 0;
 				p->state = UNUSED;
 

@@ -61,12 +61,12 @@ struct proc {
 
   //Thread
   struct proc* manager;        // Manager lwp
-  int isThread;                // If it is manager LWP then 0, else 1
+  int isThread;                // If it is manager LWP then 1, else 0
   thread_t tid;                // To define single lwp ID
   void* ret_val;			   // The return value of a thread
+  uint theap;                  // Top of Heap
+  uint bstack;                 // Bottom of Stack
 };
-
-int tid_alloc[NPROC];
 
 // Process memory is laid out contiguously, low addresses first:
 //   text
