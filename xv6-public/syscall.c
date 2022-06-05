@@ -49,7 +49,8 @@ fetchstr(uint addr, char **pp)
 int
 argint(int n, int *ip)
 {
-  return fetchint((myproc()->tf->esp) + 4 + 4*n, ip);
+//  return fetchint((myproc()->tf->esp) + 4 + 4*n, ip);
+  return fetchint((mythd()->tf->esp) + 4 + 4*n, ip);
 }
 
 // Fetch the nth word-sized system call argument as a pointer
@@ -103,12 +104,25 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
-extern int sys_getlev(void);
+
+// Operating_Systems_Projects01
 extern int sys_yield(void);
+extern int sys_getlev(void);
 extern int sys_set_cpu_share(void);
 extern int sys_thread_create(void);
 extern int sys_thread_exit(void);
 extern int sys_thread_join(void);
+
+extern int sys_xem_init(void);
+extern int sys_xem_wait(void);
+extern int sys_xem_unlock(void);
+
+extern int sys_rwlock_init(void);
+extern int sys_rwlock_acquire_readlock(void);
+extern int sys_rwlock_acquire_writelock(void);
+extern int sys_rwlock_release_readlock(void);
+extern int sys_rwlock_release_writelock(void);
+
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -132,15 +146,23 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-[SYS_getlev]	sys_getlev,
-[SYS_yield]		sys_yield,
-[SYS_set_cpu_share]		sys_set_cpu_share,
-[SYS_thread_create] sys_thread_create,
-[SYS_thread_exit] sys_thread_exit,
-[SYS_thread_join] sys_thread_join,
+[SYS_yield]   sys_yield,
+[SYS_getlev]  sys_getlev,
+[SYS_set_cpu_share]  sys_set_cpu_share,
+[SYS_thread_create]  sys_thread_create,
+[SYS_thread_exit]    sys_thread_exit,
+[SYS_thread_join]    sys_thread_join,
+[SYS_xem_init] sys_xem_init,
+[SYS_xem_wait] sys_xem_wait,
+[SYS_xem_unlock] sys_xem_unlock,
+[SYS_rwlock_init] sys_rwlock_init,
+[SYS_rwlock_acquire_readlock] sys_rwlock_acquire_readlock,
+[SYS_rwlock_acquire_writelock] sys_rwlock_acquire_writelock,
+[SYS_rwlock_release_readlock] sys_rwlock_release_readlock,
+[SYS_rwlock_release_writelock] sys_rwlock_release_writelock
 };
 
-void
+/*void
 syscall(void)
 {
   int num;
@@ -153,5 +175,20 @@ syscall(void)
     cprintf("%d %s: unknown sys call %d\n",
             curproc->pid, curproc->name, num);
     curproc->tf->eax = -1;
+  }
+}*/
+void
+syscall(void)
+{
+  int num;
+  struct thread *curthd = mythd();
+
+  num = curthd->tf->eax;
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    curthd->tf->eax = syscalls[num]();
+  } else {
+    cprintf("%d %s: unknown sys call %d\n",
+            myproc()->pid, myproc()->name, num);
+    curthd->tf->eax = -1;
   }
 }

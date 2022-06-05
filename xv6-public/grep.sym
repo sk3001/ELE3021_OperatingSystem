@@ -14,12 +14,12 @@
 00000000 ulib.c
 00000000 printf.c
 00000660 printint
-00000a98 digits.1054
+00000a98 digits.1059
 00000000 umalloc.c
 00000e40 freep
 00000e44 base
 00000330 strcpy
-0000062a yield
+00000622 yield
 00000700 printf
 00000642 thread_exit
 00000550 memmove
@@ -35,7 +35,7 @@
 000005a2 write
 000005da fstat
 000005b2 kill
-00000622 getlev
+0000062a getlev
 000005f2 chdir
 000005ba exec
 0000058a wait

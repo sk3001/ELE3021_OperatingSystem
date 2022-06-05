@@ -41,6 +41,7 @@ static int
 fdalloc(struct file *f)
 {
   int fd;
+//  struct proc *curproc = myproc();
   struct proc *curproc = myproc();
 
   for(fd = 0; fd < NOFILE; fd++){

@@ -7,6 +7,64 @@
 #include "mmu.h"
 #include "proc.h"
 
+// Operating_Systems_Projects01
+int
+sys_yield(void)
+{
+  yield();
+  return 0;
+}
+
+int
+sys_getlev(void)
+{
+  if(myproc()->stype == MLFQ)
+    return myproc()->qlev;
+
+  return -1;
+}
+
+int
+sys_set_cpu_share(void)
+{
+  int n;
+  if (argint(0, &n) < 0)
+    return -1;
+  return set_cpu_share(n);
+}
+
+
+// Operating_Systems_Projects02
+int
+sys_thread_create(void)
+{
+  int i, argv[3];
+  for (i = 0; i < 3; i++)
+    if (argint(i, &argv[i]) < 0)
+      return -1;
+  return thread_create((thread_t*)argv[0], (void* (*)(void*))argv[1], (void*) argv[2]);
+}
+
+int
+sys_thread_exit(void)
+{
+  int n;
+    if (argint(0, &n) < 0)
+      return -1;
+  thread_exit((void*)n);
+  return 0;
+}
+
+int
+sys_thread_join(void)
+{
+  int i, argv[2];
+  for (i = 0; i < 2; i++)
+    if (argint(i, &argv[i]) < 0)
+      return -1;
+  return thread_join((thread_t)argv[0], (void**)argv[1]);
+}
+
 int
 sys_fork(void)
 {
@@ -67,7 +125,8 @@ sys_sleep(void)
   acquire(&tickslock);
   ticks0 = ticks;
   while(ticks - ticks0 < n){
-    if(myproc()->killed){
+//    if(myproc()->killed){
+    if(myproc()->killed || myproc()->exited){
       release(&tickslock);
       return -1;
     }
@@ -90,68 +149,85 @@ sys_uptime(void)
   return xticks;
 }
 
-
 int
-sys_getlev(void)
+sys_xem_init(void)
 {
-	return getlev();
+    int argv[1];
+
+    if (argint(0, &argv[0]) < 0)
+        return -1;
+
+    return xem_init((xem_t*)argv[0]);
 }
 
 int
-sys_yield(void)
+sys_xem_wait(void)
 {
-	return yield();
+    int argv[1];
+
+    if (argint(0, &argv[0]) < 0)
+        return -1;
+
+    return xem_wait((xem_t*)argv[0]);
 }
 
-int
-sys_set_cpu_share(void)
+int sys_xem_unlock(void)
 {
-	int cpu_share;
-	if (argint(0, &cpu_share) < 0)
-		return -1;
-	return set_cpu_share(cpu_share);
+    int argv[1];
+
+    if (argint(0, &argv[0]) < 0)
+        return -1;
+
+    return xem_unlock((xem_t*)argv[0]);
 }
 
-int
-sys_thread_create(void)
+int sys_rwlock_init(void) 
 {
-    int thread, routine, arg;
+    int argv[1];
 
-    if(argint(0, &thread) < 0)
+    if (argint(0, &argv[0]) < 0)
         return -1;
 
-    if(argint(1, &routine) < 0)
-        return -1;
-
-    if(argint(2, &arg) < 0)
-        return -1;
-
-    return thread_create((thread_t*)thread, (void*)routine, (void*)arg);
+    return rwlock_init((rwlock_t*) argv[0]);
 }
 
-int
-sys_thread_exit(void)
+int sys_rwlock_acquire_readlock(void) 
 {
-    int retval;
+    int argv[1];
 
-    if(argint(0, &retval) < 0)
+    if (argint(0, &argv[0]) < 0)
         return -1;
 
-    thread_exit((void*)retval);
-    return 0;
+    return rwlock_acquire_readlock((rwlock_t*)argv[0]);
 }
 
-int
-sys_thread_join(void)
+int sys_rwlock_acquire_writelock(void) 
 {
-    int thread, retval;
+    int argv[1];
 
-    if(argint(0, &thread) < 0)
+    if (argint(0, &argv[0]) < 0)
         return -1;
 
-    if(argint(1, &retval) < 0)
-        return -1;
-
-    return thread_join((thread_t)thread, (void**)retval);
+    return rwlock_acquire_writelock((rwlock_t*)argv[0]);
 }
 
+int sys_rwlock_release_readlock(void) 
+{
+    int argv[1];
+
+    if (argint(0, &argv[0]) < 0)
+        return -1;
+
+
+    return rwlock_release_readlock((rwlock_t*)argv[0]);
+}
+
+int sys_rwlock_release_writelock(void) 
+{
+    int argv[1];
+
+    if (argint(0, &argv[0]) < 0)
+        return -1;
+
+    return rwlock_relaese_writelock((rwlock_t*)argv[0]);
+}

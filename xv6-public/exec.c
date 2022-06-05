@@ -2,10 +2,18 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "defs.h"
+#include "proc.h"
 #include "x86.h"
 #include "elf.h"
+
+#include "spinlock.h"
+
+extern struct {
+  struct spinlock lock;
+  struct proc proc[NPROC];
+  struct thread thread[NTHREAD];
+} ptable;
 
 int
 exec(char *path, char **argv)
@@ -17,7 +25,9 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
+  struct thread *t;
   struct proc *curproc = myproc();
+  struct thread *curthd = mythd();
 
   begin_op();
 
@@ -87,6 +97,26 @@ exec(char *path, char **argv)
   if(copyout(pgdir, sp, ustack, (3+argc+1)*4) < 0)
     goto bad;
 
+  // Close all the other threads.
+  acquire(&ptable.lock);
+  if(allthdexit() == -1){
+    release(&ptable.lock);
+    goto bad;
+  }
+
+  for(t = ptable.thread; t < &ptable.thread[NTHREAD]; t++){
+    if(t == curthd)
+      continue;
+    if(t->mp == curproc && t->state == ZOMBIE){
+      kfree(t->kstack);
+      t->kstack = 0;
+      t->usp = 0;
+      t->state = UNUSED;
+      t->tid = 0;
+      t->mp = 0;
+    }
+  }
+
   // Save program name for debugging.
   for(last=s=path; *s; s++)
     if(*s == '/')
@@ -97,10 +127,14 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  curproc->tf->eip = elf.entry;  // main
-  curproc->tf->esp = sp;
+  curproc->fslist = 0;
+  curthd->usp = sz;
+  curthd->tf->eip = elf.entry;  // main
+  curthd->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
+
+  release(&ptable.lock);
   return 0;
 
  bad:

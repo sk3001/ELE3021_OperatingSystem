@@ -110,25 +110,40 @@ int             growproc(int);
 int             kill(int);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
+struct thread*  mythd(void);
+//void            setprocstate(struct proc*);
+void            setstate(struct proc*, struct thread*, int);
 void            pinit(void);
 void            procdump(void);
-void            scheduler(void) __attribute__((noreturn));
-void            sched(void);
 void            setproc(struct proc*);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(void);
+void            wakeup1(void*);
 void            wakeup(void*);
-int            	yield(void);
-void						tick_yield(void);
-void						minit(void);
-void						mlfq_pass_inc(void);
-void						priority_boost(void);
-int							getlev(void);
-int							set_cpu_share(int);
-int             thread_create(thread_t* thread, void* (*start_routine)(void*), void* arg);
-void            thread_exit(void* retval);
-int             thread_join(thread_t thread, void** retval);
+void            init_mlfq(void);
+int				xem_init(xem_t*);
+int				xem_wait(xem_t*);
+int				xem_unlock(xem_t*);
+int				rwlock_init(rwlock_t*);
+int				rwlock_acquire_readlock(rwlock_t*);
+int				rwlock_acquire_writelock(rwlock_t*);
+int				rwlock_release_readlock(rwlock_t*);
+int				rwlock_relaese_writelock(rwlock_t*);
+	
+// scheduler.c
+void            scheduler(void) __attribute__((noreturn));
+void            sched(void);
+void            yield(void);
+int             set_cpu_share(int);
+
+// thread.c
+struct thread*  allocthd(struct proc*);
+int             allthdexit(void);
+struct thread*  nextthd(struct proc*);
+int             thread_create(thread_t*, void* (*)(void*), void*);
+void            thread_exit(void*);
+int             thread_join(thread_t, void**);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -194,6 +209,8 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+uint            ualloc(struct proc*);
+void            ufree(struct proc*, uint);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

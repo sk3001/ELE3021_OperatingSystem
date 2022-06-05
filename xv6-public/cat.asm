@@ -663,14 +663,14 @@ SYSCALL(uptime)
  3ff:	cd 40                	int    $0x40
  401:	c3                   	ret    
 
-00000402 <getlev>:
-SYSCALL(getlev)
+00000402 <yield>:
+SYSCALL(yield)
  402:	b8 16 00 00 00       	mov    $0x16,%eax
  407:	cd 40                	int    $0x40
  409:	c3                   	ret    
 
-0000040a <yield>:
-SYSCALL(yield)
+0000040a <getlev>:
+SYSCALL(getlev)
  40a:	b8 17 00 00 00       	mov    $0x17,%eax
  40f:	cd 40                	int    $0x40
  411:	c3                   	ret    

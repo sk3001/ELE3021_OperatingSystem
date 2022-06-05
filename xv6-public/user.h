@@ -23,12 +23,16 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-int getlev(void);
+
+// Operating_Systems_Projects01
 int yield(void);
+int getlev(void);
 int set_cpu_share(int);
-int thread_create(thread_t*, void*, void*);
-void thread_exit(void*) __attribute__((noreturn));
-int thread_join(thread_t, void**);
+
+// Operating_Systems_Projects02
+int thread_create(thread_t *, void* (*)(void *), void *);
+void thread_exit(void *);
+int thread_join(thread_t, void **);
 
 // ulib.c
 int stat(const char*, struct stat*);

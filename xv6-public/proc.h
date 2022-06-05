@@ -8,6 +8,7 @@ struct cpu {
   int ncli;                    // Depth of pushcli nesting.
   int intena;                  // Were interrupts enabled before pushcli?
   struct proc *proc;           // The process running on this cpu or null
+  struct thread *thd;
 };
 
 extern struct cpu cpus[NCPU];
@@ -32,40 +33,49 @@ struct context {
   uint eip;
 };
 
-enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+struct list {
+  uint usp;
+  struct list *next;
+};
 
-// Per-process state
+enum procstate { UNUSED, ZOMBIE, EMBRYO, SLEEPING, RUNNING, RUNNABLE };
+enum scheduler { MLFQ=1, STRIDE };
+enum level { HQLEV, MQLEV, LQLEV };
+
+struct thread {
+  uint usp;                    // Bottom of user stack pointer for this thread
+  char *kstack;                // Bottom of kernel stack for this thread
+  enum procstate state;        // Thread state
+  int tid;                     // Thread ID
+  struct proc *mp;             // master process
+  struct trapframe *tf;        // Trap frame for current syscall
+  struct context *context;     // swtch() here to run thread
+  void *chan;                  // If non-zero, sleeping on chan
+};
+
 struct proc {
   uint sz;                     // Size of process memory (bytes)
-  uint usz;
-  pde_t* pgdir;                // Page table
-  char *kstack;                // Bottom of kernel stack for this process
+  pde_t *pgdir;                // Page table
   enum procstate state;        // Process state
   int pid;                     // Process ID
   struct proc *parent;         // Parent process
-  struct trapframe *tf;        // Trap frame for current syscall
-  struct context *context;     // swtch() here to run process
-  void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
+  int exited;                  // If non-zero, should exit
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  int lev;			     	   // Priority level
-  uint tick_cnt;			   // Total tick count
-  int is_stride;			   // If non-zero, stride process
-  int stride;				   // If non-zero, stride value
-  uint pass_value;			   // Pass value
-  int ticket;			       // Number of ticket
+  // Operating_Systems_Projects01
+  enum scheduler stype;        // Scheduler type
+  enum level qlev;             // Queue level
 
+  uint ticks;                  // To check time quantum
+  uint share;                  // Process share
+  uint pass;                   // MLFQ: to check time allotment, STRIDE: pass value
 
-  //Thread
-  struct proc* manager;        // Manager lwp
-  int isThread;                // If it is manager LWP then 1, else 0
-  thread_t tid;                // To define single lwp ID
-  void* ret_val;			   // The return value of a thread
-  uint theap;                  // Top of Heap
-  uint bstack;                 // Bottom of Stack
+  // Operating_Systems_Projects02
+  struct list *fslist;
+  struct thread *pin;
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -73,12 +83,3 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
-
-#define UINT_MAX (0xffffffff)
-#define MAX_PASS (0x0fffffff)
-
-#define TOTAL_TICKET (100)
-#define MAX_STRIDE_TICKET (80)
-#define BOOST_LIMIT (100)
-
-#define LARGENUM (10000)

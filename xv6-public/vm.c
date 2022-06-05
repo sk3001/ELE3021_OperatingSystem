@@ -153,7 +153,7 @@ switchkvm(void)
 }
 
 // Switch TSS and h/w page table to correspond to process p.
-void
+/*void
 switchuvm(struct proc *p)
 {
   if(p == 0)
@@ -169,6 +169,33 @@ switchuvm(struct proc *p)
   mycpu()->gdt[SEG_TSS].s = 0;
   mycpu()->ts.ss0 = SEG_KDATA << 3;
   mycpu()->ts.esp0 = (uint)p->kstack + KSTACKSIZE;
+  // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
+  // forbids I/O instructions (e.g., inb and outb) from user space
+  mycpu()->ts.iomb = (ushort) 0xFFFF;
+  ltr(SEG_TSS << 3);
+  lcr3(V2P(p->pgdir));  // switch to process's address space
+  popcli();
+}*/
+void
+switchuvm(struct proc *p)
+{
+  struct thread * t;
+
+  if(p == 0)
+    panic("switchuvm: no process");
+  if(p->pgdir == 0)
+    panic("switchuvm: no pgdir");
+
+  t = p->pin;
+  if(t->kstack == 0)
+    panic("switchuvm: no kstack");
+
+  pushcli();
+  mycpu()->gdt[SEG_TSS] = SEG16(STS_T32A, &mycpu()->ts,
+                                sizeof(mycpu()->ts)-1, 0);
+  mycpu()->gdt[SEG_TSS].s = 0;
+  mycpu()->ts.ss0 = SEG_KDATA << 3;
+  mycpu()->ts.esp0 = (uint)t->kstack + KSTACKSIZE;
   // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
   // forbids I/O instructions (e.g., inb and outb) from user space
   mycpu()->ts.iomb = (ushort) 0xFFFF;
@@ -383,6 +410,45 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
     va = va0 + PGSIZE;
   }
   return 0;
+}
+
+uint
+ualloc(struct proc *p)
+{
+  uint sz, sp;
+  char *ustack;
+  struct list *fstack;
+
+  if((fstack = p->fslist) == 0){
+    sz = p->sz;
+    if((sz = allocuvm(p->pgdir, sz, sz + 2*PGSIZE)) == 0)
+      return 0;
+    clearpteu(p->pgdir, (char*)(sz - 2*PGSIZE));
+    sp = sz;
+    p->sz = sz;
+    ustack = uva2ka(p->pgdir, (char*)(sp - PGSIZE));
+  }else{
+    sp = fstack->usp;
+    p->fslist = fstack->next;
+    ustack = (char*)fstack;
+  }
+  memset(ustack, 0, PGSIZE);
+  return sp;
+}
+
+void
+ufree(struct proc *p, uint sp)
+{
+  char *ustack;
+  struct list *free;
+
+  ustack = uva2ka(p->pgdir, (char*)(sp - PGSIZE));
+  memset(ustack, 0, PGSIZE);
+
+  free = (struct list*)ustack;
+  free->usp = sp;
+  free->next = p->fslist;
+  p->fslist = free;
 }
 
 //PAGEBREAK!

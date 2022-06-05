@@ -5,11 +5,11 @@ _test_scheduler:     file format elf32-i386
 Disassembly of section .text:
 
 00000000 <main>:
-  void (*func)(int);
-  int arg;
+	int arg;
 };
 
-int main(int argc, char* argv[])
+int
+main(int argc, char *argv[])
 {
    0:	8d 4c 24 04          	lea    0x4(%esp),%ecx
    4:	83 e4 f0             	and    $0xfffffff0,%esp
@@ -18,68 +18,68 @@ int main(int argc, char* argv[])
    b:	89 e5                	mov    %esp,%ebp
    d:	53                   	push   %ebx
    e:	51                   	push   %ecx
-    { test_mlfq, MLFQ_LEVCNT },
-    /* Process scheduled by MLFQ scheduler, does not yield itself */
-    { test_mlfq, MLFQ_NONE },
-  };
+		/* Process scheduled by MLFQ scheduler, does not yield itself */
+		{test_mlfq, MLFQ_NONE},
+		{test_mlfq, MLFQ_NONE},
+	};
 
-  for (i = 0; i < WORKLOAD_NUM; i++) {
+	for (i = 0; i < WORKLOAD_NUM; i++) {
    f:	31 db                	xor    %ebx,%ebx
 {
   11:	83 ec 20             	sub    $0x20,%esp
-  struct workload workloads[WORKLOAD_NUM] = {
+	struct workload workloads[WORKLOAD_NUM] = {
   14:	c7 45 d8 a0 01 00 00 	movl   $0x1a0,-0x28(%ebp)
   1b:	c7 45 dc 05 00 00 00 	movl   $0x5,-0x24(%ebp)
   22:	c7 45 e0 a0 01 00 00 	movl   $0x1a0,-0x20(%ebp)
   29:	c7 45 e4 0f 00 00 00 	movl   $0xf,-0x1c(%ebp)
   30:	c7 45 e8 a0 00 00 00 	movl   $0xa0,-0x18(%ebp)
-  37:	c7 45 ec 01 00 00 00 	movl   $0x1,-0x14(%ebp)
+  37:	c7 45 ec 00 00 00 00 	movl   $0x0,-0x14(%ebp)
   3e:	c7 45 f0 a0 00 00 00 	movl   $0xa0,-0x10(%ebp)
   45:	c7 45 f4 00 00 00 00 	movl   $0x0,-0xc(%ebp)
-    pid = fork();
+		pid = fork();
   4c:	e8 19 04 00 00       	call   46a <fork>
-    if (pid > 0) {
+		if (pid > 0) {
   51:	83 f8 00             	cmp    $0x0,%eax
   54:	7f 12                	jg     68 <main+0x68>
-      /* Parent */
-      continue;
-    } else if (pid == 0) {
+			/* Parent */
+			continue;
+		} else if (pid == 0) {
   56:	75 31                	jne    89 <main+0x89>
-      /* Child */
-      void (*func)(int) = workloads[i].func;
-      int arg = workloads[i].arg;
-      /* Do this workload */
-      func(arg);
+			/* Child */
+			void (*func)(int) = workloads[i].func;
+			int arg = workloads[i].arg;
+			/* Do this workload */
+			func(arg);
   58:	83 ec 0c             	sub    $0xc,%esp
   5b:	ff 74 dd dc          	pushl  -0x24(%ebp,%ebx,8)
   5f:	ff 54 dd d8          	call   *-0x28(%ebp,%ebx,8)
-      exit();
+			exit();
   63:	e8 0a 04 00 00       	call   472 <exit>
-  for (i = 0; i < WORKLOAD_NUM; i++) {
+	for (i = 0; i < WORKLOAD_NUM; i++) {
   68:	83 c3 01             	add    $0x1,%ebx
   6b:	83 fb 04             	cmp    $0x4,%ebx
   6e:	75 dc                	jne    4c <main+0x4c>
-      exit();
-    }
-  }
+			exit();
+		}
+	}
 
-  for (i = 0; i < WORKLOAD_NUM; i++) {
-    wait();
+	for (i = 0; i < WORKLOAD_NUM; i++) {
+		wait();
   70:	e8 05 04 00 00       	call   47a <wait>
   75:	e8 00 04 00 00       	call   47a <wait>
   7a:	e8 fb 03 00 00       	call   47a <wait>
   7f:	e8 f6 03 00 00       	call   47a <wait>
-  }
+	}
 
-  exit();
+	exit();
   84:	e8 e9 03 00 00       	call   472 <exit>
-      printf(1, "FAIL : fork\n");
+			printf(1, "FAIL : fork\n");
   89:	50                   	push   %eax
   8a:	50                   	push   %eax
   8b:	68 98 09 00 00       	push   $0x998
   90:	6a 01                	push   $0x1
   92:	e8 59 05 00 00       	call   5f0 <printf>
-      exit();
+			exit();
   97:	e8 d6 03 00 00       	call   472 <exit>
   9c:	66 90                	xchg   %ax,%ax
   9e:	66 90                	xchg   %ax,%ax
@@ -91,18 +91,18 @@ int main(int argc, char* argv[])
   a3:	57                   	push   %edi
   a4:	56                   	push   %esi
   a5:	53                   	push   %ebx
-  int cnt = 0;
+	int cnt = 0;
   a6:	31 db                	xor    %ebx,%ebx
 {
   a8:	83 ec 2c             	sub    $0x2c,%esp
-  int cnt_level[MLFQ_LEVEL] = { 0, 0, 0 };
+	int cnt_level[MLFQ_LEVEL] = {0, 0, 0};
   ab:	c7 45 dc 00 00 00 00 	movl   $0x0,-0x24(%ebp)
   b2:	c7 45 e0 00 00 00 00 	movl   $0x0,-0x20(%ebp)
   b9:	c7 45 e4 00 00 00 00 	movl   $0x0,-0x1c(%ebp)
-  start_tick = uptime();
+	start_tick = uptime();
   c0:	e8 45 04 00 00       	call   50a <uptime>
   c5:	89 c7                	mov    %eax,%edi
-      if (type == MLFQ_YIELD || type == MLFQ_LEVCNT_YIELD) {
+			if (type == MLFQ_YIELD || type == MLFQ_LEVCNT_YIELD) {
   c7:	8b 45 08             	mov    0x8(%ebp),%eax
   ca:	8b 75 08             	mov    0x8(%ebp),%esi
   cd:	83 e8 02             	sub    $0x2,%eax
@@ -110,42 +110,42 @@ int main(int argc, char* argv[])
   d3:	89 45 d4             	mov    %eax,-0x2c(%ebp)
   d6:	8d 76 00             	lea    0x0(%esi),%esi
   d9:	8d bc 27 00 00 00 00 	lea    0x0(%edi,%eiz,1),%edi
-      cnt++;
+			cnt++;
   e0:	83 c3 01             	add    $0x1,%ebx
-      if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD) {
+			if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD ) {
   e3:	83 fe 01             	cmp    $0x1,%esi
   e6:	74 28                	je     110 <test_mlfq+0x70>
-      curr_tick = uptime();
+			curr_tick = uptime();
   e8:	e8 1d 04 00 00       	call   50a <uptime>
-      if (curr_tick - start_tick > LIFETIME) {
+			if (curr_tick - start_tick > LIFETIME) {
   ed:	29 f8                	sub    %edi,%eax
   ef:	3d e8 03 00 00       	cmp    $0x3e8,%eax
   f4:	7f 32                	jg     128 <test_mlfq+0x88>
-      if (type == MLFQ_YIELD || type == MLFQ_LEVCNT_YIELD) {
+			if (type == MLFQ_YIELD || type == MLFQ_LEVCNT_YIELD) {
   f6:	83 7d d4 01          	cmpl   $0x1,-0x2c(%ebp)
   fa:	77 e4                	ja     e0 <test_mlfq+0x40>
-        yield();
-  fc:	e8 19 04 00 00       	call   51a <yield>
-      cnt++;
+				yield();
+  fc:	e8 11 04 00 00       	call   512 <yield>
+			cnt++;
  101:	83 c3 01             	add    $0x1,%ebx
-      if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD) {
+			if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD ) {
  104:	83 fe 01             	cmp    $0x1,%esi
  107:	75 df                	jne    e8 <test_mlfq+0x48>
  109:	8d b4 26 00 00 00 00 	lea    0x0(%esi,%eiz,1),%esi
-        curr_mlfq_level = getlev(); /* getlev : system call */
- 110:	e8 fd 03 00 00       	call   512 <getlev>
-        cnt_level[curr_mlfq_level]++;
+				curr_mlfq_level = getlev(); /* getlev : system call */
+ 110:	e8 05 04 00 00       	call   51a <getlev>
+				cnt_level[curr_mlfq_level]++;
  115:	83 44 85 dc 01       	addl   $0x1,-0x24(%ebp,%eax,4)
-      curr_tick = uptime();
+			curr_tick = uptime();
  11a:	e8 eb 03 00 00       	call   50a <uptime>
-      if (curr_tick - start_tick > LIFETIME) {
+			if (curr_tick - start_tick > LIFETIME) {
  11f:	29 f8                	sub    %edi,%eax
  121:	3d e8 03 00 00       	cmp    $0x3e8,%eax
  126:	7e ce                	jle    f6 <test_mlfq+0x56>
-  if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD) {
+	if (type == MLFQ_LEVCNT || type == MLFQ_LEVCNT_YIELD ) {
  128:	83 fe 01             	cmp    $0x1,%esi
  12b:	75 3b                	jne    168 <test_mlfq+0xc8>
-    printf(1, "MLfQ(%s), cnt : %d, lev[0] : %d, lev[1] : %d, lev[2] : %d\n", type == MLFQ_LEVCNT ? "compute" : "yield", cnt, cnt_level[0], cnt_level[1], cnt_level[2]);
+		printf(1, "MLfQ(%s), cnt : %d, lev[0] : %d, lev[1] : %d, lev[2] : %d\n",
  12d:	83 7d 08 01          	cmpl   $0x1,0x8(%ebp)
  131:	ba 48 09 00 00       	mov    $0x948,%edx
  136:	b8 50 09 00 00       	mov    $0x950,%eax
@@ -169,7 +169,7 @@ int main(int argc, char* argv[])
  162:	c3                   	ret    
  163:	90                   	nop
  164:	8d 74 26 00          	lea    0x0(%esi,%eiz,1),%esi
-    printf(1, "MLfQ(%s), cnt : %d\n", type == MLFQ_NONE ? "compute" : "yield", cnt);
+		printf(1, "MLfQ(%s), cnt : %d\n",
  168:	8b 45 08             	mov    0x8(%ebp),%eax
  16b:	ba 48 09 00 00       	mov    $0x948,%edx
  170:	53                   	push   %ebx
@@ -200,33 +200,33 @@ int main(int argc, char* argv[])
  1a5:	53                   	push   %ebx
  1a6:	83 ec 18             	sub    $0x18,%esp
  1a9:	8b 7d 08             	mov    0x8(%ebp),%edi
-  if (set_cpu_share(portion) != 0) {
+	if (set_cpu_share(portion) != 0) {
  1ac:	57                   	push   %edi
  1ad:	e8 70 03 00 00       	call   522 <set_cpu_share>
  1b2:	83 c4 10             	add    $0x10,%esp
  1b5:	85 c0                	test   %eax,%eax
  1b7:	75 3f                	jne    1f8 <test_stride+0x58>
  1b9:	89 c3                	mov    %eax,%ebx
-  start_tick = uptime();
+	start_tick = uptime();
  1bb:	e8 4a 03 00 00       	call   50a <uptime>
  1c0:	89 c6                	mov    %eax,%esi
  1c2:	8d b6 00 00 00 00    	lea    0x0(%esi),%esi
-      curr_tick = uptime();
+			curr_tick = uptime();
  1c8:	e8 3d 03 00 00       	call   50a <uptime>
-      if (curr_tick - start_tick > LIFETIME) {
+			if (curr_tick - start_tick > LIFETIME) {
  1cd:	29 f0                	sub    %esi,%eax
-      cnt++;
+			cnt++;
  1cf:	83 c3 01             	add    $0x1,%ebx
-      if (curr_tick - start_tick > LIFETIME) {
+			if (curr_tick - start_tick > LIFETIME) {
  1d2:	3d e8 03 00 00       	cmp    $0x3e8,%eax
  1d7:	7e ef                	jle    1c8 <test_stride+0x28>
-  printf(1, "STRIDE(%d%%), cnt : %d\n", portion, cnt);
+	printf(1, "STRIDE(%d%%), cnt : %d\n", portion, cnt);
  1d9:	53                   	push   %ebx
  1da:	57                   	push   %edi
  1db:	68 80 09 00 00       	push   $0x980
  1e0:	6a 01                	push   $0x1
  1e2:	e8 09 04 00 00       	call   5f0 <printf>
-  return;
+	return;
  1e7:	83 c4 10             	add    $0x10,%esp
 }
  1ea:	8d 65 f4             	lea    -0xc(%ebp),%esp
@@ -236,7 +236,7 @@ int main(int argc, char* argv[])
  1f0:	5d                   	pop    %ebp
  1f1:	c3                   	ret    
  1f2:	8d b6 00 00 00 00    	lea    0x0(%esi),%esi
-    printf(1, "FAIL : set_cpu_share\n");
+		printf(1, "FAIL : set_cpu_share\n");
  1f8:	83 ec 08             	sub    $0x8,%esp
  1fb:	68 6a 09 00 00       	push   $0x96a
  200:	6a 01                	push   $0x1
@@ -775,14 +775,14 @@ SYSCALL(uptime)
  50f:	cd 40                	int    $0x40
  511:	c3                   	ret    
 
-00000512 <getlev>:
-SYSCALL(getlev)
+00000512 <yield>:
+SYSCALL(yield)
  512:	b8 16 00 00 00       	mov    $0x16,%eax
  517:	cd 40                	int    $0x40
  519:	c3                   	ret    
 
-0000051a <yield>:
-SYSCALL(yield)
+0000051a <getlev>:
+SYSCALL(getlev)
  51a:	b8 17 00 00 00       	mov    $0x17,%eax
  51f:	cd 40                	int    $0x40
  521:	c3                   	ret    
