@@ -7,18 +7,6 @@
 #include "proc.h"
 #include "spinlock.h"
 
-struct __xem_t {
-    int value;
-    int active;
-    struct spinlock lock;
-};
-
-struct __rwlock_t {
-    xem_t lock;
-    xem_t writelock;
-    int readers;
-};
-
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -535,80 +523,4 @@ procdump(void)
     }
     cprintf("\n");
   }
-}
-
-int xem_init(xem_t* semaphore) {
-    acquire(&semaphore->lock);
-
-    if (semaphore->active == 0) {
-        semaphore->active = 1;
-        semaphore->value = 1;
-    }
-    else {
-        return -1;
-    }
-
-    release(&semaphore->lock);
-    return 0;
-}
-
-int xem_wait(xem_t* semaphore) {
-    acquire(&semaphore->lock);
-
-    if (semaphore->value >= 1)
-        semaphore->value -= 1;
-    else {
-        while (semaphore->value < 1)
-            sleep(&semaphore, &semaphore->lock);
-        semaphore->value -= 1;
-    }
-    return 0;
-}
-
-int xem_unlock(xem_t* semaphore) {
-    acquire(&semaphore->lock);
-    semaphore->active = 0;
-    release(&semaphore->lock);
-
-    return 0;
-}
-
-int rwlock_init(rwlock_t* rwlock) {
-    rwlock->readers = 0;
-    xem_init(&rwlock->lock);
-    xem_init(&rwlock->writelock);
-
-    return 0;
-}
-
-int rwlock_acquire_readlock(rwlock_t* rwlock) {
-    xem_wait(&rwlock->lock);
-    rwlock->readers++;
-    if (rwlock->readers == 1)
-        xem_wait(&rwlock->writelock);
-    xem_unlock(&rwlock->lock);
-
-    return 0;
-}
-
-int rwlock_acquire_writelock(rwlock_t* rwlock) {
-    xem_wait(&rwlock->writelock);
-
-    return 0;
-}
-
-int rwlock_release_readlock(rwlock_t* rwlock) {
-    xem_wait(&rwlock->lock);
-    rwlock->readers--;
-    if (rwlock->readers == 0)
-        xem_unlock(&rwlock->writelock);
-    xem_unlock(&rwlock->lock);
-
-    return 0;
-}
-
-int rwlock_relaese_writelock(rwlock_t* rwlock) {
-    xem_unlock(&rwlock->writelock);
-
-    return 0;
 }

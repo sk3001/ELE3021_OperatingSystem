@@ -122,15 +122,7 @@ int             wait(void);
 void            wakeup1(void*);
 void            wakeup(void*);
 void            init_mlfq(void);
-int				xem_init(xem_t*);
-int				xem_wait(xem_t*);
-int				xem_unlock(xem_t*);
-int				rwlock_init(rwlock_t*);
-int				rwlock_acquire_readlock(rwlock_t*);
-int				rwlock_acquire_writelock(rwlock_t*);
-int				rwlock_release_readlock(rwlock_t*);
-int				rwlock_relaese_writelock(rwlock_t*);
-	
+
 // scheduler.c
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);

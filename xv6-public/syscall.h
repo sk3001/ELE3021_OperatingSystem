@@ -26,11 +26,3 @@
 #define SYS_thread_create 25
 #define SYS_thread_exit   26
 #define SYS_thread_join   27
-#define SYS_xem_init 28
-#define SYS_xem_wait 29
-#define SYS_xem_unlock 30
-#define SYS_rwlock_init 31
-#define SYS_rwlock_acquire_readlock 32
-#define SYS_rwlock_acquire_writelock 33
-#define SYS_rwlock_release_readlock 34
-#define SYS_rwlock_release_writelock 35

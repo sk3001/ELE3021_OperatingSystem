@@ -21,6 +21,10 @@ typedef struct __sem_t {
   thread_mutex_t lock;
 } sem_t;
 
-
+typedef struct __rwlock_t {
+  sem_t lock;
+  sem_t writelock;
+  int readers;
+} rwlock_t;
 
 #endif
