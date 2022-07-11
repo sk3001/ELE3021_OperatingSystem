@@ -16,4 +16,3 @@
 
 ## Project 04 : File System
 #### [- Milestone 1](https://github.com/sk3001/ELE3021_OperatingSystem/blob/master/Project%20Wiki/Project04/Project04-Milestone1.md)
-#### [- Milestone 2](https://github.com/sk3001/ELE3021_OperatingSystem/blob/master/Project%20Wiki/Project04/Project04-Milestone2.md)
