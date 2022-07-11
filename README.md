@@ -1,5 +1,7 @@
 # ELE3021_OperatingSystem
 
+## Hanyang Univesity Operating System (2022 Spring Semester)
+
 ## Project 01 : MLFQ and Stride Scheduling
 #### [- Milestone 1](https://github.com/sk3001/ELE3021_OperatingSystem/blob/master/Project%20Wiki/Project01/Project01-Milestone1.md)
 #### [- Milestone 2](https://github.com/sk3001/ELE3021_OperatingSystem/blob/master/Project%20Wiki/Project01/Project01-Milestone2.md)
